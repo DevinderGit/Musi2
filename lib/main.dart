@@ -41,21 +41,24 @@ class MyApp extends StatelessWidget {
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key}); // Added named 'key' parameter to fix warning
   @override
-  _HomeScreenState createState() => _HomeScreenState();
+  HomeScreenState createState() => HomeScreenState();
 }
 
-class _HomeScreenState extends State<HomeScreen> {
+class HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   final TextEditingController _searchController = TextEditingController();
   List<dynamic> _searchResults = [];
   String? _currentVideoId;
   YoutubePlayerController? _controller;
   bool _isPlaying = false;
   List<String> _playlist = [];
+  Duration? _lastPosition; // Store the last playback position
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this); // Add lifecycle observer
     _loadPlaylist();
+    _loadLastPlaybackState(); // Load last video and position on app start
   }
 
   Future<void> _loadPlaylist() async {
@@ -68,6 +71,25 @@ class _HomeScreenState extends State<HomeScreen> {
   Future<void> _savePlaylist() async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setStringList('playlist', _playlist);
+  }
+
+  Future<void> _saveLastPlaybackState() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('last_video_id', _currentVideoId ?? '');
+    await prefs.setInt('last_position', _lastPosition?.inSeconds ?? 0);
+  }
+
+  Future<void> _loadLastPlaybackState() async {
+    final prefs = await SharedPreferences.getInstance();
+    final lastVideoId = prefs.getString('last_video_id') ?? '';
+    final lastPosition = prefs.getInt('last_position') ?? 0;
+    if (lastVideoId.isNotEmpty) {
+      setState(() {
+        _currentVideoId = lastVideoId;
+        _lastPosition = Duration(seconds: lastPosition);
+        playVideo(lastVideoId, initialPosition: _lastPosition);
+      });
+    }
   }
 
   Future<void> searchYouTube(String query) async {
@@ -83,24 +105,27 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
-  void playVideo(String videoId) {
+  void playVideo(String videoId, {Duration? initialPosition}) {
     setState(() {
       _currentVideoId = videoId;
-      _controller?.dispose(); // Dispose previous controller
+      _controller?.dispose();
       _controller = YoutubePlayerController(
         initialVideoId: videoId,
         flags: YoutubePlayerFlags(
           autoPlay: true,
           mute: false,
           hideThumbnail: true,
-         
+       
+          startAt: initialPosition?.inSeconds ?? 0,
         ),
       )..addListener(() {
           setState(() {
             _isPlaying = _controller!.value.isPlaying;
+            _lastPosition = _controller!.value.position;
           });
         });
     });
+    _saveLastPlaybackState();
   }
 
   void togglePlayPause() {
@@ -112,6 +137,7 @@ class _HomeScreenState extends State<HomeScreen> {
           _controller!.play();
         }
       });
+      _saveLastPlaybackState();
     }
   }
 
@@ -125,7 +151,32 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    print('App lifecycle state: $state');
+    if (state == AppLifecycleState.paused) {
+      // App is sent to the background (minimized)
+      if (_controller != null && _controller!.value.isPlaying) {
+        _controller!.pause();
+        Future.delayed(Duration(seconds: 3), () {
+          if (_controller != null) {
+            _controller!.play();
+            print('Resumed playback after 3 seconds');
+          }
+        });
+      }
+    } else if (state == AppLifecycleState.detached) {
+      // App is terminated
+      if (_controller != null && _controller!.value.isPlaying) {
+        _controller!.pause();
+        _saveLastPlaybackState();
+        print('App terminated, saved playback state');
+      }
+    }
+  }
+
+  @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this); // Remove lifecycle observer
     _controller?.dispose();
     _searchController.dispose();
     super.dispose();
@@ -155,7 +206,7 @@ class _HomeScreenState extends State<HomeScreen> {
               ),
               if (_currentVideoId != null)
                 Container(
-                  height: 200, // Smaller player for audio focus
+                  height: 200,
                   child: YoutubePlayer(
                     controller: _controller!,
                     showVideoProgressIndicator: true,
@@ -204,7 +255,6 @@ class _HomeScreenState extends State<HomeScreen> {
       ),
       floatingActionButton: FloatingActionButton(
         onPressed: () {
-          // Show playlist
           showDialog(
             context: context,
             builder: (context) => AlertDialog(
@@ -217,7 +267,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   itemBuilder: (context, index) {
                     final videoId = _playlist[index];
                     return ListTile(
-                      title: Text('Video $videoId'), // Replace with title if available
+                      title: Text('Video $videoId'),
                       onTap: () => playVideo(videoId),
                     );
                   },
