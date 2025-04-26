@@ -29,9 +29,8 @@ class YouTubeWebView extends StatefulWidget {
 class _YouTubeWebViewState extends State<YouTubeWebView> {
   InAppWebViewController? _webViewController;
   final TextEditingController _videoIdController = TextEditingController();
-  String _currentVideoId = 'b83WrYIVIcY'; // Default to your video
+  String _currentVideoId = 'b83WrYIVIcY'; // Default video
 
-  // Load a video by ID
   void _loadVideo(String videoId) {
     if (videoId.isEmpty) return;
     setState(() {
@@ -50,11 +49,21 @@ class _YouTubeWebViewState extends State<YouTubeWebView> {
                 height: '100%',
                 width: '100%',
                 videoId: '$videoId',
-                playerVars: { 'autoplay': 1, 'controls': 1, 'playsinline': 1 },
+                playerVars: { 'autoplay': 1, 'controls': 1, 'playsinline': 1, 'enablejsapi': 1 },
                 events: {
-                  'onReady': function(event) { event.target.playVideo(); },
+                  'onReady': function(event) { 
+                    console.log('Player ready');
+                    event.target.playVideo(); 
+                  },
                   'onStateChange': function(event) {
                     console.log('Player state: ' + event.data);
+                    if (event.data === YT.PlayerState.PAUSED) {
+                      console.log('Paused detected, attempting to resume');
+                      event.target.playVideo();
+                    }
+                    if (event.data === YT.PlayerState.ENDED) {
+                      console.log('Video ended');
+                    }
                   },
                   'onError': function(event) {
                     console.log('Player error: ' + event.data);
@@ -72,7 +81,6 @@ class _YouTubeWebViewState extends State<YouTubeWebView> {
   @override
   void initState() {
     super.initState();
-    // Load the default video on startup
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _loadVideo(_currentVideoId);
     });
@@ -103,12 +111,23 @@ class _YouTubeWebViewState extends State<YouTubeWebView> {
               javaScriptEnabled: true,
               mediaPlaybackRequiresUserGesture: false,
               allowsInlineMediaPlayback: true,
+              allowsAirPlayForMediaPlayback: true,
+              allowsPictureInPictureMediaPlayback: true,
             ),
             onWebViewCreated: (controller) {
               _webViewController = controller;
             },
-            onLoadStop: (controller, url) {
-              debugPrint('Loaded IFrame player');
+            onLoadStart: (controller, url) {
+              debugPrint('Started loading: $url');
+            },
+            onLoadStop: (controller, url) async {
+              debugPrint('Finished loading: $url');
+              await controller.evaluateJavascript(source: '''
+                if (player && typeof player.playVideo === 'function') {
+                  console.log('Resuming playback on load stop');
+                  player.playVideo();
+                }
+              ''');
             },
             onConsoleMessage: (controller, consoleMessage) {
               debugPrint('Console: ${consoleMessage.message}');

@@ -45,5 +45,38 @@
 	<true/>
 	<key>UIApplicationSupportsIndirectInputEvents</key>
 	<true/>
+	
+	<key>UIBackgroundModes</key>
+	<array>
+	<string>audio</string>
+	</array>
+	<key>NSAppTransportSecurity</key>
+	<dict>
+	<key>NSAllowsArbitraryLoadsInWebContent</key>
+	<true/>
+	<key>NSAllowsArbitraryLoads</key>
+	<true/>
+	</dict>
+	<key>NSAppTransportSecurity</key>
+	<dict>
+    <key>NSExceptionDomains</key>
+    <dict>
+	<key>youtube.com</key>
+	<dict>
+	<key>NSIncludesSubdomains</key>
+	<true/>
+	<key>NSExceptionAllowsInsecureHTTPLoads</key>
+	<true/>
+	</dict>
+	<key>googlevideo.com</key>
+	<dict>
+	<key>NSIncludesSubdomains</key>
+	<true/>
+	<key>NSExceptionAllowsInsecureHTTPLoads</key>
+	<true/>
+	</dict>
+    </dict>
+</dict>
+
 </dict>
 </plist>
