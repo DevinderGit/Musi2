@@ -1,146 +1,215 @@
 import 'package:flutter/material.dart';
-import 'package:flutter_inappwebview/flutter_inappwebview.dart';
+import 'package:youtube_player_flutter/youtube_player_flutter.dart';
+import 'package:http/http.dart' as http;
+import 'dart:convert';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'constants.dart';
 
-void main() {
-  runApp(const MyApp());
-}
+void main() => runApp(MyApp());
 
 class MyApp extends StatelessWidget {
-  const MyApp({super.key});
-
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      home: Scaffold(
-        appBar: AppBar(title: const Text('Musi Clone')),
-        body: const YouTubeWebView(),
-      ),
+      home: HomeScreen(),
     );
   }
 }
 
-class YouTubeWebView extends StatefulWidget {
-  const YouTubeWebView({super.key});
-
+class HomeScreen extends StatefulWidget {
   @override
-  State<YouTubeWebView> createState() => _YouTubeWebViewState();
+  _HomeScreenState createState() => _HomeScreenState();
 }
 
-class _YouTubeWebViewState extends State<YouTubeWebView> {
-  InAppWebViewController? _webViewController;
-  final TextEditingController _videoIdController = TextEditingController();
-  String _currentVideoId = 'b83WrYIVIcY'; // Default video
-
-  void _loadVideo(String videoId) {
-    if (videoId.isEmpty) return;
-    setState(() {
-      _currentVideoId = videoId;
-    });
-    final html = '''
-      <!DOCTYPE html>
-      <html>
-        <body style="margin:0;background:black;">
-          <div id="player"></div>
-          <script src="https://www.youtube.com/iframe_api"></script>
-          <script>
-            var player;
-            function onYouTubeIframeAPIReady() {
-              player = new YT.Player('player', {
-                height: '100%',
-                width: '100%',
-                videoId: '$videoId',
-                playerVars: { 'autoplay': 1, 'controls': 1, 'playsinline': 1, 'enablejsapi': 1 },
-                events: {
-                  'onReady': function(event) { 
-                    console.log('Player ready');
-                    event.target.playVideo(); 
-                  },
-                  'onStateChange': function(event) {
-                    console.log('Player state: ' + event.data);
-                    if (event.data === YT.PlayerState.PAUSED) {
-                      console.log('Paused detected, attempting to resume');
-                      event.target.playVideo();
-                    }
-                    if (event.data === YT.PlayerState.ENDED) {
-                      console.log('Video ended');
-                    }
-                  },
-                  'onError': function(event) {
-                    console.log('Player error: ' + event.data);
-                  }
-                }
-              });
-            }
-          </script>
-        </body>
-      </html>
-    ''';
-    _webViewController?.loadData(data: html);
-  }
+class _HomeScreenState extends State<HomeScreen> {
+  final TextEditingController _searchController = TextEditingController();
+  List<dynamic> _searchResults = [];
+  String? _currentVideoId;
+  YoutubePlayerController? _controller;
+  bool _isPlaying = false;
+  List<String> _playlist = [];
 
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      _loadVideo(_currentVideoId);
+    _loadPlaylist();
+  }
+
+  Future<void> _loadPlaylist() async {
+    final prefs = await SharedPreferences.getInstance();
+    setState(() {
+      _playlist = prefs.getStringList('playlist') ?? [];
+    });
+  }
+
+  Future<void> _savePlaylist() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setStringList('playlist', _playlist);
+  }
+
+  Future<void> searchYouTube(String query) async {
+    final url =
+        'https://www.googleapis.com/youtube/v3/search?part=snippet&q=$query&type=video&key=$youtubeApiKey';
+    final response = await http.get(Uri.parse(url));
+    if (response.statusCode == 200) {
+      setState(() {
+        _searchResults = json.decode(response.body)['items'];
+      });
+    } else {
+      print('Failed to search YouTube');
+    }
+  }
+
+  void playVideo(String videoId) {
+    setState(() {
+      _currentVideoId = videoId;
+      _controller?.dispose(); // Dispose previous controller
+      _controller = YoutubePlayerController(
+        initialVideoId: videoId,
+        flags: YoutubePlayerFlags(
+          autoPlay: true,
+          mute: false,
+          hideThumbnail: true,
+        ),
+      )..addListener(() {
+          setState(() {
+            _isPlaying = _controller!.value.isPlaying;
+          });
+        });
+    });
+  }
+
+  void togglePlayPause() {
+    if (_controller != null) {
+      setState(() {
+        if (_controller!.value.isPlaying) {
+          _controller!.pause();
+        } else {
+          _controller!.play();
+        }
+      });
+    }
+  }
+
+  void addToPlaylist(String videoId) async {
+    setState(() {
+      if (!_playlist.contains(videoId)) {
+        _playlist.add(videoId);
+        _savePlaylist();
+      }
     });
   }
 
   @override
-  Widget build(BuildContext context) {
-    return Column(
-      children: [
-        Padding(
-          padding: const EdgeInsets.all(8.0),
-          child: TextField(
-            controller: _videoIdController,
-            decoration: InputDecoration(
-              labelText: 'Enter YouTube Video ID (e.g., b83WrYIVIcY)',
-              suffixIcon: IconButton(
-                icon: const Icon(Icons.play_arrow),
-                onPressed: () => _loadVideo(_videoIdController.text),
-              ),
-              border: const OutlineInputBorder(),
-            ),
-            onSubmitted: _loadVideo,
-          ),
-        ),
-        Expanded(
-          child: InAppWebView(
-            initialSettings: InAppWebViewSettings(
-              javaScriptEnabled: true,
-              mediaPlaybackRequiresUserGesture: false,
-              allowsInlineMediaPlayback: true,
-              allowsAirPlayForMediaPlayback: true,
-              allowsPictureInPictureMediaPlayback: true,
-            ),
-            onWebViewCreated: (controller) {
-              _webViewController = controller;
-            },
-            onLoadStart: (controller, url) {
-              debugPrint('Started loading: $url');
-            },
-            onLoadStop: (controller, url) async {
-              debugPrint('Finished loading: $url');
-              await controller.evaluateJavascript(source: '''
-                if (player && typeof player.playVideo === 'function') {
-                  console.log('Resuming playback on load stop');
-                  player.playVideo();
-                }
-              ''');
-            },
-            onConsoleMessage: (controller, consoleMessage) {
-              debugPrint('Console: ${consoleMessage.message}');
-            },
-          ),
-        ),
-      ],
-    );
+  void dispose() {
+    _controller?.dispose();
+    _searchController.dispose();
+    super.dispose();
   }
 
   @override
-  void dispose() {
-    _videoIdController.dispose();
-    super.dispose();
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: Text('YouTube Music')),
+      body: Stack(
+        children: [
+          Column(
+            children: [
+              Padding(
+                padding: EdgeInsets.all(8.0),
+                child: TextField(
+                  controller: _searchController,
+                  decoration: InputDecoration(
+                    labelText: 'Search music',
+                    suffixIcon: IconButton(
+                      icon: Icon(Icons.search),
+                      onPressed: () => searchYouTube(_searchController.text),
+                    ),
+                  ),
+                  onSubmitted: searchYouTube,
+                ),
+              ),
+              if (_currentVideoId != null)
+                Container(
+                  height: 200, // Smaller player for audio focus
+                  child: YoutubePlayer(
+                    controller: _controller!,
+                    showVideoProgressIndicator: true,
+                  ),
+                ),
+              Expanded(
+                child: ListView.builder(
+                  itemCount: _searchResults.length,
+                  itemBuilder: (context, index) {
+                    final video = _searchResults[index];
+                    final videoId = video['id']['videoId'];
+                    final title = video['snippet']['title'];
+                    return ListTile(
+                      title: Text(title),
+                      trailing: IconButton(
+                        icon: Icon(Icons.add),
+                        onPressed: () => addToPlaylist(videoId),
+                      ),
+                      onTap: () => playVideo(videoId),
+                    );
+                  },
+                ),
+              ),
+            ],
+          ),
+          if (_currentVideoId != null)
+            Positioned(
+              bottom: 0,
+              left: 0,
+              right: 0,
+              child: Container(
+                color: Colors.grey[200],
+                padding: EdgeInsets.all(8.0),
+                child: Row(
+                  children: [
+                    Expanded(child: Text('Now Playing: $_currentVideoId')),
+                    IconButton(
+                      icon: Icon(_isPlaying ? Icons.pause : Icons.play_arrow),
+                      onPressed: togglePlayPause,
+                    ),
+                  ],
+                ),
+              ),
+            ),
+        ],
+      ),
+      floatingActionButton: FloatingActionButton(
+        onPressed: () {
+          // Show playlist
+          showDialog(
+            context: context,
+            builder: (context) => AlertDialog(
+              title: Text('Playlist'),
+              content: Container(
+                width: double.maxFinite,
+                child: ListView.builder(
+                  shrinkWrap: true,
+                  itemCount: _playlist.length,
+                  itemBuilder: (context, index) {
+                    final videoId = _playlist[index];
+                    return ListTile(
+                      title: Text('Video $videoId'), // Replace with title if available
+                      onTap: () => playVideo(videoId),
+                    );
+                  },
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(context),
+                  child: Text('Close'),
+                ),
+              ],
+            ),
+          );
+        },
+        child: Icon(Icons.playlist_play),
+      ),
+    );
   }
 }
