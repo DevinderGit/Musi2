@@ -28,7 +28,55 @@ class YouTubeWebView extends StatefulWidget {
 
 class _YouTubeWebViewState extends State<YouTubeWebView> {
   InAppWebViewController? _webViewController;
-  final TextEditingController _searchController = TextEditingController();
+  final TextEditingController _videoIdController = TextEditingController();
+  String _currentVideoId = 'b83WrYIVIcY'; // Default to your video
+
+  // Load a video by ID
+  void _loadVideo(String videoId) {
+    if (videoId.isEmpty) return;
+    setState(() {
+      _currentVideoId = videoId;
+    });
+    final html = '''
+      <!DOCTYPE html>
+      <html>
+        <body style="margin:0;background:black;">
+          <div id="player"></div>
+          <script src="https://www.youtube.com/iframe_api"></script>
+          <script>
+            var player;
+            function onYouTubeIframeAPIReady() {
+              player = new YT.Player('player', {
+                height: '100%',
+                width: '100%',
+                videoId: '$videoId',
+                playerVars: { 'autoplay': 1, 'controls': 1, 'playsinline': 1 },
+                events: {
+                  'onReady': function(event) { event.target.playVideo(); },
+                  'onStateChange': function(event) {
+                    console.log('Player state: ' + event.data);
+                  },
+                  'onError': function(event) {
+                    console.log('Player error: ' + event.data);
+                  }
+                }
+              });
+            }
+          </script>
+        </body>
+      </html>
+    ''';
+    _webViewController?.loadData(data: html);
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    // Load the default video on startup
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _loadVideo(_currentVideoId);
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -37,54 +85,33 @@ class _YouTubeWebViewState extends State<YouTubeWebView> {
         Padding(
           padding: const EdgeInsets.all(8.0),
           child: TextField(
-            controller: _searchController,
+            controller: _videoIdController,
             decoration: InputDecoration(
-              labelText: 'Search YouTube',
+              labelText: 'Enter YouTube Video ID (e.g., b83WrYIVIcY)',
               suffixIcon: IconButton(
-                icon: const Icon(Icons.search),
-                onPressed: () => _searchYouTube(_searchController.text),
+                icon: const Icon(Icons.play_arrow),
+                onPressed: () => _loadVideo(_videoIdController.text),
               ),
               border: const OutlineInputBorder(),
             ),
-            onSubmitted: _searchYouTube,
+            onSubmitted: _loadVideo,
           ),
         ),
         Expanded(
           child: InAppWebView(
-            initialUrlRequest: URLRequest(url: WebUri('https://m.youtube.com')),
             initialSettings: InAppWebViewSettings(
               javaScriptEnabled: true,
-              mediaPlaybackRequiresUserGesture: false, // Allow auto-play
-              useShouldOverrideUrlLoading: true,
-              allowsInlineMediaPlayback: true, // Play videos inline (iOS)
-              allowsBackForwardNavigationGestures: true, // iOS navigation gestures
+              mediaPlaybackRequiresUserGesture: false,
+              allowsInlineMediaPlayback: true,
             ),
             onWebViewCreated: (controller) {
               _webViewController = controller;
             },
-            onLoadStart: (controller, url) {
-              debugPrint('Started loading: $url');
-            },
-            onLoadStop: (controller, url) async {
-              debugPrint('Finished loading: $url');
-              // Ensure video playback continues
-              await controller.evaluateJavascript(source: '''
-                var videos = document.getElementsByTagName("video");
-                for (var i = 0; i < videos.length; i++) {
-                  videos[i].play();
-                }
-              ''');
+            onLoadStop: (controller, url) {
+              debugPrint('Loaded IFrame player');
             },
             onConsoleMessage: (controller, consoleMessage) {
               debugPrint('Console: ${consoleMessage.message}');
-            },
-            shouldOverrideUrlLoading: (controller, navigationAction) async {
-              final url = navigationAction.request.url.toString();
-              // Allow YouTube and video domains
-              if (url.contains('youtube.com') || url.contains('googlevideo.com')) {
-                return NavigationActionPolicy.ALLOW;
-              }
-              return NavigationActionPolicy.CANCEL;
             },
           ),
         ),
@@ -92,17 +119,9 @@ class _YouTubeWebViewState extends State<YouTubeWebView> {
     );
   }
 
-  void _searchYouTube(String query) {
-    if (query.isNotEmpty && _webViewController != null) {
-      final url =
-          'https://m.youtube.com/results?search_query=${Uri.encodeQueryComponent(query)}';
-      _webViewController!.loadUrl(urlRequest: URLRequest(url: WebUri(url)));
-    }
-  }
-
   @override
   void dispose() {
-    _searchController.dispose();
+    _videoIdController.dispose();
     super.dispose();
   }
 }
