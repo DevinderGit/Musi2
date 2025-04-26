@@ -28,6 +28,7 @@ class YouTubeWebView extends StatefulWidget {
 
 class _YouTubeWebViewState extends State<YouTubeWebView> {
   late final WebViewController _controller;
+  final TextEditingController _searchController = TextEditingController();
 
   @override
   void initState() {
@@ -37,50 +38,71 @@ class _YouTubeWebViewState extends State<YouTubeWebView> {
       ..setBackgroundColor(Colors.black)
       ..setNavigationDelegate(
         NavigationDelegate(
+          onPageStarted: (String url) {
+            debugPrint('Loading: $url');
+          },
           onPageFinished: (String url) {
             debugPrint('Loaded: $url');
+            // Inject JavaScript to ensure audio continues in background
+            _controller.runJavaScript('''
+              var videos = document.getElementsByTagName("video");
+              for (var i = 0; i < videos.length; i++) {
+                videos[i].play();
+              }
+            ''');
           },
           onWebResourceError: (WebResourceError error) {
             debugPrint('Error: ${error.description}');
           },
-        ),
-      );
-
-    // Load IFrame player
-    const videoId = 'dQw4w9WgXcQ'; // Replace with dynamic video ID
-    final html = '''
-      <!DOCTYPE html>
-      <html>
-        <body style="margin:0;background:black;">
-          <div id="player"></div>
-          <script src="https://www.youtube.com/iframe_api"></script>
-          <script>
-            var player;
-            function onYouTubeIframeAPIReady() {
-              player = new YT.Player('player', {
-                height: '100%',
-                width: '100%',
-                videoId: '$videoId',
-                playerVars: { 'autoplay': 1, 'controls': 1, 'playsinline': 1 },
-                events: {
-                  'onReady': function(event) { event.target.playVideo(); },
-                  'onStateChange': function(event) {
-                    if (event.data == YT.PlayerState.ENDED) {
-                      // Handle video end (e.g., play next video)
-                    }
-                  }
-                }
-              });
+          onNavigationRequest: (NavigationRequest request) {
+            if (request.url.contains('youtube.com') ||
+                request.url.contains('googlevideo.com')) {
+              return NavigationDecision.navigate;
             }
-          </script>
-        </body>
-      </html>
-    ''';
-    _controller.loadHtmlString(html);
+            return NavigationDecision.prevent;
+          },
+        ),
+      )
+      ..loadRequest(Uri.parse('https://m.youtube.com'));
+  }
+
+  void _searchYouTube(String query) {
+    if (query.isNotEmpty) {
+      final url =
+          'https://m.youtube.com/results?search_query=${Uri.encodeQueryComponent(query)}';
+      _controller.loadRequest(Uri.parse(url));
+    }
   }
 
   @override
   Widget build(BuildContext context) {
-    return WebViewWidget(controller: _controller);
+    return Column(
+      children: [
+        Padding(
+          padding: const EdgeInsets.all(8.0),
+          child: TextField(
+            controller: _searchController,
+            decoration: InputDecoration(
+              labelText: 'Search YouTube',
+              suffixIcon: IconButton(
+                icon: const Icon(Icons.search),
+                onPressed: () => _searchYouTube(_searchController.text),
+              ),
+              border: const OutlineInputBorder(),
+            ),
+            onSubmitted: _searchYouTube,
+          ),
+        ),
+        Expanded(
+          child: WebViewWidget(controller: _controller),
+        ),
+      ],
+    );
+  }
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
   }
 }
