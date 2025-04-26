@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:webview_flutter/webview_flutter.dart';
+import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 
 void main() {
   runApp(const MyApp());
@@ -27,52 +27,8 @@ class YouTubeWebView extends StatefulWidget {
 }
 
 class _YouTubeWebViewState extends State<YouTubeWebView> {
-  late final WebViewController _controller;
+  InAppWebViewController? _webViewController;
   final TextEditingController _searchController = TextEditingController();
-
-  @override
-  void initState() {
-    super.initState();
-    _controller = WebViewController()
-      ..setJavaScriptMode(JavaScriptMode.unrestricted)
-      ..setBackgroundColor(Colors.black)
-      ..setNavigationDelegate(
-        NavigationDelegate(
-          onPageStarted: (String url) {
-            debugPrint('Loading: $url');
-          },
-          onPageFinished: (String url) {
-            debugPrint('Loaded: $url');
-            // Inject JavaScript to ensure audio continues in background
-            _controller.runJavaScript('''
-              var videos = document.getElementsByTagName("video");
-              for (var i = 0; i < videos.length; i++) {
-                videos[i].play();
-              }
-            ''');
-          },
-          onWebResourceError: (WebResourceError error) {
-            debugPrint('Error: ${error.description}');
-          },
-          onNavigationRequest: (NavigationRequest request) {
-            if (request.url.contains('youtube.com') ||
-                request.url.contains('googlevideo.com')) {
-              return NavigationDecision.navigate;
-            }
-            return NavigationDecision.prevent;
-          },
-        ),
-      )
-      ..loadRequest(Uri.parse('https://m.youtube.com'));
-  }
-
-  void _searchYouTube(String query) {
-    if (query.isNotEmpty) {
-      final url =
-          'https://m.youtube.com/results?search_query=${Uri.encodeQueryComponent(query)}';
-      _controller.loadRequest(Uri.parse(url));
-    }
-  }
 
   @override
   Widget build(BuildContext context) {
@@ -94,10 +50,54 @@ class _YouTubeWebViewState extends State<YouTubeWebView> {
           ),
         ),
         Expanded(
-          child: WebViewWidget(controller: _controller),
+          child: InAppWebView(
+            initialUrlRequest: URLRequest(url: WebUri('https://m.youtube.com')),
+            initialSettings: InAppWebViewSettings(
+              javaScriptEnabled: true,
+              mediaPlaybackRequiresUserGesture: false, // Allow auto-play
+              useShouldOverrideUrlLoading: true,
+              allowsInlineMediaPlayback: true, // Play videos inline (iOS)
+              allowsBackForwardNavigationGestures: true, // iOS navigation gestures
+            ),
+            onWebViewCreated: (controller) {
+              _webViewController = controller;
+            },
+            onLoadStart: (controller, url) {
+              debugPrint('Started loading: $url');
+            },
+            onLoadStop: (controller, url) async {
+              debugPrint('Finished loading: $url');
+              // Ensure video playback continues
+              await controller.evaluateJavascript(source: '''
+                var videos = document.getElementsByTagName("video");
+                for (var i = 0; i < videos.length; i++) {
+                  videos[i].play();
+                }
+              ''');
+            },
+            onConsoleMessage: (controller, consoleMessage) {
+              debugPrint('Console: ${consoleMessage.message}');
+            },
+            shouldOverrideUrlLoading: (controller, navigationAction) async {
+              final url = navigationAction.request.url.toString();
+              // Allow YouTube and video domains
+              if (url.contains('youtube.com') || url.contains('googlevideo.com')) {
+                return NavigationActionPolicy.ALLOW;
+              }
+              return NavigationActionPolicy.CANCEL;
+            },
+          ),
         ),
       ],
     );
+  }
+
+  void _searchYouTube(String query) {
+    if (query.isNotEmpty && _webViewController != null) {
+      final url =
+          'https://m.youtube.com/results?search_query=${Uri.encodeQueryComponent(query)}';
+      _webViewController!.loadUrl(urlRequest: URLRequest(url: WebUri(url)));
+    }
   }
 
   @override
