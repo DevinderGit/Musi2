@@ -4,10 +4,32 @@ import 'package:http/http.dart' as http;
 import 'dart:convert';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'constants.dart';
-
-void main() => runApp(MyApp());
+import 'package:audio_session/audio_session.dart';
+void main() async {
+  WidgetsFlutterBinding.ensureInitialized(); // Ensure Flutter is initialized
+  // Configure audio session for background playback
+  final session = await AudioSession.instance;
+  await session.configure(AudioSessionConfiguration(
+    avAudioSessionCategory: AVAudioSessionCategory.playback,
+    avAudioSessionCategoryOptions:
+        AVAudioSessionCategoryOptions.mixWithOthers,
+    avAudioSessionMode: AVAudioSessionMode.defaultMode,
+    avAudioSessionRouteSharingPolicy:
+        AVAudioSessionRouteSharingPolicy.defaultPolicy,
+    androidAudioAttributes: const AndroidAudioAttributes(
+      contentType: AndroidAudioContentType.music,
+      usage: AndroidAudioUsage.media,
+    ),
+    androidAudioFocusGainType: AndroidAudioFocusGainType.gain,
+    androidWillPauseWhenDucked: false,
+  ));
+  // Activate the audio session
+  await session.setActive(true);
+  runApp(MyApp());
+}
 
 class MyApp extends StatelessWidget {
+  const MyApp({super.key}); // Added named 'key' parameter to fix warning
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
@@ -17,6 +39,7 @@ class MyApp extends StatelessWidget {
 }
 
 class HomeScreen extends StatefulWidget {
+  const HomeScreen({super.key}); // Added named 'key' parameter to fix warning
   @override
   _HomeScreenState createState() => _HomeScreenState();
 }
@@ -70,6 +93,7 @@ class _HomeScreenState extends State<HomeScreen> {
           autoPlay: true,
           mute: false,
           hideThumbnail: true,
+         
         ),
       )..addListener(() {
           setState(() {

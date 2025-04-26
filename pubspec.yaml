@@ -30,11 +30,12 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
-  youtube_player_flutter: ^8.1.0  # For YouTube video playback
+  youtube_player_flutter: ^8.1.2  # For YouTube video playback
   http: ^1.2.0                  # For YouTube API requests
   get: ^4.6.6                   # State management
   shared_preferences: ^2.2.3    # For storing playlists
-
+  audio_session: ^0.1.19
+  
 dev_dependencies:
   flutter_test:
     sdk: flutter
